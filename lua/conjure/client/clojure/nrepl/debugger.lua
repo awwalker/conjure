@@ -10,7 +10,7 @@ do
   _2amodule_2a["aniseed/locals"] = {}
   _2amodule_locals_2a = (_2amodule_2a)["aniseed/locals"]
 end
-local autoload = (require("conjure.aniseed.autoload")).autoload
+local autoload = (require("aniseed.autoload")).autoload
 local a, client, elisp, extract, log, server, str, text = autoload("conjure.aniseed.core"), autoload("conjure.client"), autoload("conjure.remote.transport.elisp"), autoload("conjure.extract"), autoload("conjure.log"), autoload("conjure.client.clojure.nrepl.server"), autoload("conjure.aniseed.string"), autoload("conjure.text")
 do end (_2amodule_locals_2a)["a"] = a
 _2amodule_locals_2a["client"] = client
@@ -25,6 +25,7 @@ do end (_2amodule_2a)["state"] = state
 local function init()
   log.append({"; Initialising CIDER debugger"}, {["break?"] = true})
   local function _1_(msg)
+    log.append({"; CIDER debugger initialized"}, {["break?"] = true})
     return log.dbg("init-debugger response", msg)
   end
   server.send({op = "init-debugger"}, _1_)

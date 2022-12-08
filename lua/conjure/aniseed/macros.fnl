@@ -32,11 +32,6 @@
       (set seen? true)))
   seen?)
 
-(fn ensure-sym [x]
-  (if (= :string (type x))
-    (sym x)
-    x))
-
 ;; This marker can be used by a post-processor to delete a useless byproduct line.
 (local delete-marker :ANISEED_DELETE_ME)
 
@@ -77,7 +72,7 @@
         ;; We can also completely disable the interactive mode which is used by
         ;; `aniseed.env` but can also be enabled by others. Sadly this works
         ;; through global variables but still!
-        interactive? (and (table? existing-mod)
+        interactive? (and (= :table (type existing-mod))
                           (not _G.ANISEED_STATIC_MODULES))
 
         ;; The final result table that gets returned from the macro.
@@ -108,7 +103,7 @@
         keys []
         vals []
         => (fn [k v]
-             (table.insert keys k)
+             (table.insert keys (sym k))
              (table.insert vals v))]
 
     ;; For each function / value pair...
@@ -118,12 +113,12 @@
           (if (seq? args)
             ;; If it's sequential, we execute the fn for side effects.
             (each [_ arg (ipairs args)]
-              (=> (sym :_) `(,mod-fn ,(tostring arg))))
+              (=> :_ `(,mod-fn ,(tostring arg))))
 
             ;; Otherwise we need to bind the execution to a name.
             (sorted-each
               (fn [bind arg]
-                (=> (ensure-sym bind) `(,mod-fn ,(tostring arg))))
+                (=> (tostring bind) `(,mod-fn ,(tostring arg))))
               args)))
          mod-fns)
 
@@ -138,18 +133,7 @@
 
       ;; We also bind these exposed locals into *module-locals* for future splatting.
       (each [_ k (ipairs keys)]
-        (if (sym? k)
-          ;; Normal symbols can just be assigned into module-locals.
-          (table.insert result `(tset ,mod-locals-sym ,(tostring k) ,k))
-
-          ;; Tables mean we're using Fennel destructure syntax.
-          ;; So we need to unpack the assignments so they can be used later in interactive evals.
-          (sorted-each
-            (fn [k v]
-              (table.insert
-                result
-                `(tset ,mod-locals-sym ,(tostring k) ,v)))
-            k))))
+        (table.insert result `(tset ,mod-locals-sym ,(tostring k) ,k))))
 
     ;; Now we can expand any existing locals into the current scope.
     ;; Since this will only happen in interactive evals we can generate messy code.
@@ -191,10 +175,10 @@
     (tset ,mod-sym ,(tostring name) ,name)])
 
 (fn defonce- [name value]
-  `(def- ,name (or (. ,mod-sym ,(tostring name)) ,value)))
+  `(def- ,name (or ,name ,value)))
 
 (fn defonce [name value]
-  `(def ,name (or (. ,mod-sym ,(tostring name)) ,value)))
+  `(def ,name (or ,name ,value)))
 
 (fn deftest [name ...]
   `(let [tests# (or (. ,mod-sym :aniseed/tests
@@ -244,54 +228,10 @@
     (table.insert body# `(wrap-last-expr ,last-expr#))
     `(do ,(unpack body#))))
 
-(fn conditional-let [branch bindings ...]
-  (assert (= 2 (length bindings)) "expected a single binding pair")
-
-  (let [[bind-expr value-expr] bindings]
-    (if
-      ;; Simple symbols
-      ;; [foo bar]
-      (sym? bind-expr)
-      `(let [,bind-expr ,value-expr]
-         (,branch ,bind-expr ,...))
-
-      ;; List / values destructure
-      ;; [(a b) c]
-      (list? bind-expr)
-      (do
-        ;; Even if the user isn't using the first slot, we will.
-        ;; [(_ val) (pcall #:foo)]
-        ;;  => [(bindGENSYM12345 val) (pcall #:foo)]
-        (when (= '_ (. bind-expr 1))
-          (tset bind-expr 1 (gensym "bind")))
-
-        `(let [,bind-expr ,value-expr]
-           (,branch ,(. bind-expr 1) ,...)))
-
-      ;; Sequential and associative table destructure
-      ;; [[a b] c]
-      ;; [{: a : b} c]
-      (table? bind-expr)
-      `(let [value# ,value-expr
-             ,bind-expr (or value# {})]
-         (,branch value# ,...))
-
-      ;; We should never get here, but just in case.
-      (assert (.. "unknown bind-expr type: " (type bind-expr))))))
-
-(fn if-let [bindings ...]
-  (assert (<= (length [...]) 2) (.. "if-let does not support more than two branches"))
-  (conditional-let 'if bindings ...))
-
-(fn when-let [bindings ...]
-  (conditional-let 'when bindings ...))
-
 {:module module
  :def- def- :def def
  :defn- defn- :defn defn
  :defonce- defonce- :defonce defonce
- :if-let if-let
- :when-let when-let
  :wrap-last-expr wrap-last-expr
  :wrap-module-body wrap-module-body
  :deftest deftest
